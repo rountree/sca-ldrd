@@ -15,3 +15,14 @@ Q: What library do I link to?
 	sym.c:(.text+0xb2): undefined reference to `BIO_dump_fp'
 
 A: The library is -lcrypto.  This is not mentioned in the man pages.
+
+Q: Where is INT_MAX defined?
+
+A: #include <limits.h>
+
+Q: What the hell?
+
+	40774B0FDA7F0000:error:1C800064:Provider routines:ossl_cipher_unpadblock:bad decrypt:../providers/implementations/ciphers/ciphercommon_block.c:124:
+	Aborted (core dumped)
+
+A: Check to see that your plaintext buffer is smaller than your encrypted text buffer.
