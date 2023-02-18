@@ -119,6 +119,7 @@ void handleErrors(void)
 int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
             unsigned char *iv, unsigned char *ciphertext)
 {
+    struct timeval start, stop;
     EVP_CIPHER_CTX *ctx;
 
     int len;
@@ -136,23 +137,32 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits
      */
+    gettimeofday( &start, NULL );
     if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
         handleErrors();
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptInit_ex( ... )" );
 
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
+    gettimeofday( &start, NULL );
     if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
         handleErrors();
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptUpdate( ... )" );
     ciphertext_len = len;
 
     /*
      * Finalise the encryption. Further ciphertext bytes may be written at
      * this stage.
      */
+    gettimeofday( &start, NULL );
     if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
         handleErrors();
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptFinal_ex( ... )" );
     ciphertext_len += len;
 
     /* Clean up */
