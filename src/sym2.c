@@ -25,15 +25,29 @@ void handleErrors(void);
 int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
             unsigned char *iv, unsigned char *ciphertext);
 void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg );
+void print_byte_string( unsigned char const * const buf, size_t length );
 
-void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg ){
-    printf("%s:%d %10.8lf %s\n",
-            file, line,
-            (stop->tv_sec - start->tv_sec) + (stop->tv_usec - start->tv_usec)/1000000.0,
-            msg);
+void
+print_byte_string( unsigned char const * const buf, size_t length ){
+    printf("0x");
+    for( size_t i=0; i<length; i++ ){
+        printf("%02x", buf[i]);
+    }
 }
 
-int main (void)
+void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg ){
+    if( NULL == file ){
+        printf("%10.8lf", (stop->tv_sec - start->tv_sec) + (stop->tv_usec - start->tv_usec)/1000000.0);
+    }else{
+        printf("%s:%d %10.8lf %s\n",
+                file, line,
+                (stop->tv_sec - start->tv_sec) + (stop->tv_usec - start->tv_usec)/1000000.0,
+                msg);
+    }
+}
+
+int
+main (void)
 {
     struct timeval start, stop;
     /*
@@ -47,11 +61,11 @@ int main (void)
     unsigned char *keys = calloc( NUM_KEYS, KEY_SZ_IN_BYTES );
     assert(keys);
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_KEYS, KEY_SZ_IN_BYTES )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_KEYS, KEY_SZ_IN_BYTES )" );
     gettimeofday( &start, NULL );
     assert( 1 == RAND_bytes( keys, NUM_KEYS * KEY_SZ_IN_BYTES ) );
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( keys, NUM_KEYS * KEY_SZ_IN_BYTES )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( keys, NUM_KEYS * KEY_SZ_IN_BYTES )" );
 
     // Set up a pile of random nonces
     assert( NUM_NONCES * NONCE_SZ_IN_BYTES < INT_MAX );
@@ -59,37 +73,42 @@ int main (void)
     unsigned char *ivs = calloc( NUM_NONCES, NONCE_SZ_IN_BYTES );
     assert(ivs);
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_NONCES, NONCE_SZ_IN_BYTES )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_NONCES, NONCE_SZ_IN_BYTES )" );
     gettimeofday( &start, NULL );
     assert( 1 == RAND_bytes( ivs, NUM_NONCES * NONCE_SZ_IN_BYTES ) );
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( ivs, NUM_NONCES * NONCE_SZ_IN_BYTES )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( ivs, NUM_NONCES * NONCE_SZ_IN_BYTES )" );
 
     // Set up long, random, plaintext message.
     gettimeofday( &start, NULL );
     unsigned char *plaintext = calloc( PLAINTEXT_BUF_SZ, 1 );
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( PLAINTEXT_BUF_SZ, 1 )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( PLAINTEXT_BUF_SZ, 1 )" );
     assert( plaintext );
     gettimeofday( &start, NULL );
     assert( 1 == RAND_bytes( plaintext, PLAINTEXT_BUF_SZ ) );
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( plaintext, PLAINTEXT_BUF_SZ )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( plaintext, PLAINTEXT_BUF_SZ )" );
 
     // Set up (longer) buffer for encrypted text.
     gettimeofday( &start, NULL );
     unsigned char *ciphertext = calloc( CRYPTTEXT_BUF_SZ, 1 );
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( CRYPTTEXT_BUF_SZ, 1 )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( CRYPTTEXT_BUF_SZ, 1 )" );
     assert( ciphertext );
 
     // Do the encryption
     int ciphertext_len;
-    for( size_t i=0; i<NUM_KEYS; i++ ){
+    for( size_t key_idx=0, iv_idx=0; key_idx<NUM_KEYS*KEY_SZ_IN_BYTES; key_idx += KEY_SZ_IN_BYTES, iv_idx += NONCE_SZ_IN_BYTES ){
+        print_byte_string( &keys[key_idx], KEY_SZ_IN_BYTES );
+        printf(" ");
+        print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
+        printf(" ");
         gettimeofday( &start, NULL );
-        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[i], &ivs[i], ciphertext);
+        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[key_idx], &ivs[iv_idx], ciphertext);
         gettimeofday( &stop, NULL );
-        print_elapsed( &start, &stop, __FILE__, __LINE__, "encrypt( ... )" );
+        print_elapsed( &start, &stop, NULL, 0, NULL);
+        printf("\n");
     }
 
     // Report out some details
@@ -99,13 +118,15 @@ int main (void)
     return 0;
 }
 
-void handleErrors(void)
+void
+handleErrors(void)
 {
     ERR_print_errors_fp(stderr);
     abort();
 }
 
-int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
+int
+encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
             unsigned char *iv, unsigned char *ciphertext)
 {
     struct timeval start, stop;
@@ -123,14 +144,14 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
     if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
         handleErrors();
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptInit_ex( ... )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptInit_ex( ... )" );
 
     // One-shot encryption
     gettimeofday( &start, NULL );
     if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
         handleErrors();
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptUpdate( ... )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptUpdate( ... )" );
     ciphertext_len = len;
 
     // Finalize
@@ -138,7 +159,7 @@ int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
     if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
         handleErrors();
     gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptFinal_ex( ... )" );
+    //print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptFinal_ex( ... )" );
     ciphertext_len += len;
 
     // Clean up 
