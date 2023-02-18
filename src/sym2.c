@@ -16,6 +16,10 @@
 
 #define PLAINTEXT_BUF_SZ (INT_MAX - 4096)   // Assumes sizeof(int)==4
 #define CRYPTTEXT_BUF_SZ (INT_MAX       )
+#define NUM_KEYS (32LL)        // NUM_KEYS * KEY_SZ_IN_BYTES must be <= INT_MAX
+#define KEY_SZ_IN_BYTES (16LL)
+#define NUM_NONCES (NUM_KEYS)
+#define NONCE_SZ_IN_BYTES (8LL)
 
 void handleErrors(void);
 int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
@@ -32,8 +36,34 @@ void print_elapsed( struct timeval *start, struct timeval *stop, char const * co
 int main (void)
 {
     struct timeval start, stop;
+    /*
     unsigned char *key = (unsigned char *)"01234567890123456789012345678901";
     unsigned char *iv = (unsigned char *)"0123456789012345";
+    */
+
+    // Set up a pile of random keys.
+    assert( NUM_KEYS * KEY_SZ_IN_BYTES < INT_MAX );
+    gettimeofday( &start, NULL );
+    unsigned char *keys = calloc( NUM_KEYS, KEY_SZ_IN_BYTES );
+    assert(keys);
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_KEYS, KEY_SZ_IN_BYTES )" );
+    gettimeofday( &start, NULL );
+    assert( 1 == RAND_bytes( keys, NUM_KEYS * KEY_SZ_IN_BYTES ) );
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( keys, NUM_KEYS * KEY_SZ_IN_BYTES )" );
+
+    // Set up a pile of random nonces
+    assert( NUM_NONCES * NONCE_SZ_IN_BYTES < INT_MAX );
+    gettimeofday( &start, NULL );
+    unsigned char *ivs = calloc( NUM_NONCES, NONCE_SZ_IN_BYTES );
+    assert(ivs);
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( NUM_NONCES, NONCE_SZ_IN_BYTES )" );
+    gettimeofday( &start, NULL );
+    assert( 1 == RAND_bytes( ivs, NUM_NONCES * NONCE_SZ_IN_BYTES ) );
+    gettimeofday( &stop, NULL );
+    print_elapsed( &start, &stop, __FILE__, __LINE__, "RAND_bytes( ivs, NUM_NONCES * NONCE_SZ_IN_BYTES )" );
 
     // Set up long, random, plaintext message.
     gettimeofday( &start, NULL );
@@ -54,11 +84,13 @@ int main (void)
     assert( ciphertext );
 
     // Do the encryption
-    gettimeofday( &start, NULL );
-    int ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, key, iv,
-                              ciphertext);
-    gettimeofday( &stop, NULL );
-    print_elapsed( &start, &stop, __FILE__, __LINE__, "encrypt( ... )" );
+    int ciphertext_len;
+    for( size_t i=0; i<NUM_KEYS; i++ ){
+        gettimeofday( &start, NULL );
+        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[i], &ivs[i], ciphertext);
+        gettimeofday( &stop, NULL );
+        print_elapsed( &start, &stop, __FILE__, __LINE__, "encrypt( ... )" );
+    }
 
     // Report out some details
     printf(" %d bytes of plaintext, %d bytes encrypted buffer, %d bytes encrypted text, %d bytes of unused buffer.\n",
