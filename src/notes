@@ -1,0 +1,17 @@
+Q: How do I fix missing header files?
+
+	sym.c:7:10: fatal error: openssl/conf.h: No such file or directory
+		7 | #include <openssl/conf.h>
+		  |
+
+A: Install the following packages.  (Works on Ubuntu Jammy)
+	apt-get install libssl-dev libssl-doc libssl3
+
+
+Q: What library do I link to?
+
+	gcc -Wall -Wextra -Werror -std=c2x -o sym sym.c -lcrypt
+	/usr/bin/ld: /tmp/cc7mC3bs.o: in function `main':
+	sym.c:(.text+0xb2): undefined reference to `BIO_dump_fp'
+
+A: The library is -lcrypto.  This is not mentioned in the man pages.
