@@ -5,4 +5,7 @@ sym: sym.c sym2.c
 sizeof: sizeof.c
 	gcc -Wall -Wextra -Werror -std=c2x -o sizeof sizeof.c
 
+clean:
+	rm -f sym sym2 sizeof
+
 
