@@ -8,11 +8,18 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#include <string.h>
-#include <stdlib.h>         // calloc(3)
+#include <sys/time.h>       // gettimeofday(2)
+#include <sys/ioctl.h>      // ioctl(2)
+#include <sys/types.h>      // open(2)
+#include <sys/stat.h>       // "
+#include <fcntl.h>          // "
+#include <unistd.h>         // sleep(3)
+#include <stdlib.h>         // calloc(3), exit(3)
 #include <assert.h>         // assert(3)
 #include <stdio.h>          // printf(3)
-#include <sys/time.h>       // gettimeofday(2)
+#include <stdint.h>         // uint64_t
+#include <inttypes.h>       // PRIu64
+#include "../../msr-safe/msr_safe.h"    // msr_batch_array, msr_batch_op, X86_IOC_MSR_BATCH
 
 #define PLAINTEXT_BUF_SZ (INT_MAX - 4096)   // Assumes sizeof(int)==4
 #define CRYPTTEXT_BUF_SZ (INT_MAX       )
@@ -23,9 +30,22 @@
 
 void handleErrors(void);
 int encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *ciphertext);
+            unsigned char *iv, unsigned char *ciphertext, int fd,
+            struct msr_batch_array *bstart, struct msr_batch_array *bstop);
 void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg );
 void print_byte_string( unsigned char const * const buf, size_t length );
+void print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop );
+void execute_ioctl( int fd, struct msr_batch_array *a );
+
+void
+execute_ioctl( int fd, struct msr_batch_array *a ){
+    int rc = ioctl( fd, X86_IOC_MSR_BATCH, a );
+    if( rc != 0 ){
+        fprintf(stdout, "ioctl failed, rc = %d\n", rc);
+        exit(-1);
+    }
+
+}
 
 void
 print_byte_string( unsigned char const * const buf, size_t length ){
@@ -37,7 +57,7 @@ print_byte_string( unsigned char const * const buf, size_t length ){
 
 void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg ){
     if( NULL == file ){
-        printf("%10.8lf", (stop->tv_sec - start->tv_sec) + (stop->tv_usec - start->tv_usec)/1000000.0);
+        printf("%10.8lf ", (stop->tv_sec - start->tv_sec) + (stop->tv_usec - start->tv_usec)/1000000.0);
     }else{
         printf("%s:%d %10.8lf %s\n",
                 file, line,
@@ -46,14 +66,45 @@ void print_elapsed( struct timeval *start, struct timeval *stop, char const * co
     }
 }
 
+void
+print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop ){
+    uint64_t energy = (bstart->ops[0].msrdata > bstop->ops[0].msrdata)
+                        ? (UINT32_MAX - bstart->ops[0].msrdata) + bstop->ops[0].msrdata
+                        : bstop->ops[0].msrdata - bstart->ops[0].msrdata;
+    uint64_t aperf  = (bstart->ops[1].msrdata > bstop->ops[1].msrdata)
+                        ? (UINT64_MAX - bstart->ops[1].msrdata) + bstop->ops[1].msrdata
+                        : bstop->ops[1].msrdata - bstart->ops[1].msrdata;
+    uint64_t mperf  = (bstart->ops[2].msrdata > bstop->ops[2].msrdata)
+                        ? (UINT64_MAX - bstart->ops[2].msrdata) + bstop->ops[2].msrdata
+                        : bstop->ops[2].msrdata - bstart->ops[2].msrdata;
+    printf("%"PRIu64" %"PRIu64" %"PRIu64" ", energy, aperf, mperf);
+}
+
 int
 main (void)
 {
     struct timeval start, stop;
-    /*
-    unsigned char *key = (unsigned char *)"01234567890123456789012345678901";
-    unsigned char *iv = (unsigned char *)"0123456789012345";
-    */
+    struct msr_batch_array batch_start, batch_stop;
+    struct msr_batch_op ops_start[3], ops_stop[3];
+
+    // Set up msr-safe batch calls.
+    int fd = open("/dev/cpu/msr_batch", O_RDWR);
+    assert(-1 != fd);
+
+    batch_start.numops = batch_stop.numops = 3;
+    batch_start.ops    = ops_start;
+    batch_stop.ops     = ops_stop;
+
+    for( ssize_t i = 0; i < 3; i++ ){
+        ops_start[i].cpu     = ops_stop[i].cpu     = 70;
+        ops_start[i].isrdmsr = ops_stop[i].isrdmsr =  1;
+        ops_start[i].err     = ops_stop[i].err     =  0;
+        ops_start[i].msrdata = ops_stop[i].msrdata =  0;
+        ops_start[i].wmask   = ops_stop[i].wmask   =  0;
+    }
+    ops_start[0].msr = ops_stop[0].msr = 0x611;    // Energy is the bottom 32 bits
+    ops_start[1].msr = ops_stop[1].msr = 0x0E8;    // APERF 64-bits
+    ops_start[2].msr = ops_stop[2].msr = 0x0E7;    // MPERF 64-bits
 
     // Set up a pile of random keys.
     assert( NUM_KEYS * KEY_SZ_IN_BYTES < INT_MAX );
@@ -100,14 +151,16 @@ main (void)
     // Do the encryption
     int ciphertext_len;
     for( size_t key_idx=0, iv_idx=0; key_idx<NUM_KEYS*KEY_SZ_IN_BYTES; key_idx += KEY_SZ_IN_BYTES, iv_idx += NONCE_SZ_IN_BYTES ){
+        sleep(2);  // Allow processor to return to quiescent state
         print_byte_string( &keys[key_idx], KEY_SZ_IN_BYTES );
         printf(" ");
         print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
         printf(" ");
         gettimeofday( &start, NULL );
-        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[key_idx], &ivs[iv_idx], ciphertext);
+        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[key_idx], &ivs[iv_idx], ciphertext, fd, &batch_start, &batch_stop);
         gettimeofday( &stop, NULL );
         print_elapsed( &start, &stop, NULL, 0, NULL);
+        print_batch( &batch_start, & batch_stop );
         printf("\n");
     }
 
@@ -127,8 +180,9 @@ handleErrors(void)
 
 int
 encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
-            unsigned char *iv, unsigned char *ciphertext)
-{
+            unsigned char *iv, unsigned char *ciphertext, int fd,
+            struct msr_batch_array *bstart, struct msr_batch_array *bstop){
+
     struct timeval start, stop;
     EVP_CIPHER_CTX *ctx;
     int len;
@@ -148,8 +202,10 @@ encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *key,
 
     // One-shot encryption
     gettimeofday( &start, NULL );
+    execute_ioctl( fd, bstart );
     if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
         handleErrors();
+    execute_ioctl( fd, bstop );
     gettimeofday( &stop, NULL );
     //print_elapsed( &start, &stop, __FILE__, __LINE__, "EVP_EncryptUpdate( ... )" );
     ciphertext_len = len;

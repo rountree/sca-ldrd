@@ -26,3 +26,7 @@ Q: What the hell?
 	Aborted (core dumped)
 
 A: Check to see that your plaintext buffer is smaller than your encrypted text buffer.
+
+Q: Where do I get numactl?
+
+A: apt-get install numactl
