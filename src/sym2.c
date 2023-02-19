@@ -19,6 +19,7 @@
 #include <stdio.h>          // printf(3)
 #include <stdint.h>         // uint64_t
 #include <inttypes.h>       // PRIu64
+#include <stdbool.h>        // bool
 #include "../../msr-safe/msr_safe.h"    // msr_batch_array, msr_batch_op, X86_IOC_MSR_BATCH
 
 #define PLAINTEXT_BUF_SZ (INT_MAX - 4096)   // Assumes sizeof(int)==4
@@ -36,6 +37,7 @@ void print_elapsed( struct timeval *start, struct timeval *stop, char const * co
 void print_byte_string( unsigned char const * const buf, size_t length );
 void print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop );
 void execute_ioctl( int fd, struct msr_batch_array *a );
+void print_hw( unsigned char const * const buf, size_t length );
 
 void
 execute_ioctl( int fd, struct msr_batch_array *a ){
@@ -53,6 +55,22 @@ print_byte_string( unsigned char const * const buf, size_t length ){
     for( size_t i=0; i<length; i++ ){
         printf("%02x", buf[i]);
     }
+    printf(" ");
+}
+void
+print_hw( unsigned char const * const buf, size_t length ){
+                                            //  0x0  0x1  0x2  0x3  0x4  0x5  0x6  0x7  0x8  0x9  0xa  0xb  0xc  0xd  0xe  0xf
+                                            // 0000 0001 0010 0011 0100 0101 0110 0111 1000 1001 1010 0011 1100 1101 1110 1111
+    static uint8_t bits_per_nibble[16] = {        0,   1,   1,   2,   1,   2,   2,   3,   1,   2,   2,   3,   2,   3,   3,   4 };
+    uint64_t hw=0;
+    uint64_t leading=0;
+    for( size_t i=0; i<length; i++ ){
+        hw += bits_per_nibble[buf[i]&0xf] + bits_per_nibble[buf[i]>>4];
+        if( 0x80 & buf[i] ){
+            leading++;
+        }
+    }
+    printf("%5"PRIu64" %5"PRIu64" ", hw, leading);
 }
 
 void print_elapsed( struct timeval *start, struct timeval *stop, char const * const file, int line, char const * const msg ){
@@ -80,12 +98,22 @@ print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop ){
     printf("%"PRIu64" %"PRIu64" %"PRIu64" ", energy, aperf, mperf);
 }
 
+unsigned char key_all_0s[KEY_SZ_IN_BYTES] = {0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00};
+unsigned char key_all_1s[KEY_SZ_IN_BYTES] = {0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF};
+
 int
 main (void)
 {
     struct timeval start, stop;
     struct msr_batch_array batch_start, batch_stop;
     struct msr_batch_op ops_start[3], ops_stop[3];
+
 
     // Set up msr-safe batch calls.
     int fd = open("/dev/cpu/msr_batch", O_RDWR);
@@ -148,25 +176,54 @@ main (void)
     //print_elapsed( &start, &stop, __FILE__, __LINE__, "calloc( CRYPTTEXT_BUF_SZ, 1 )" );
     assert( ciphertext );
 
+    bool init = false;
+    if( !init ){
+        printf( "key nonce seconds joules aperf mperf key_hw key_leading nonce_hw nonce_leading\n");
+        init = true;
+    }
+
     // Do the encryption
-    int ciphertext_len;
     for( size_t key_idx=0, iv_idx=0; key_idx<NUM_KEYS*KEY_SZ_IN_BYTES; key_idx += KEY_SZ_IN_BYTES, iv_idx += NONCE_SZ_IN_BYTES ){
         sleep(2);  // Allow processor to return to quiescent state
-        print_byte_string( &keys[key_idx], KEY_SZ_IN_BYTES );
-        printf(" ");
-        print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
-        printf(" ");
         gettimeofday( &start, NULL );
-        ciphertext_len = encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[key_idx], &ivs[iv_idx], ciphertext, fd, &batch_start, &batch_stop);
+        encrypt (plaintext, PLAINTEXT_BUF_SZ, &keys[key_idx], &ivs[iv_idx], ciphertext, fd, &batch_start, &batch_stop);
         gettimeofday( &stop, NULL );
+        print_byte_string( &keys[key_idx], KEY_SZ_IN_BYTES );
+        print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
         print_elapsed( &start, &stop, NULL, 0, NULL);
         print_batch( &batch_start, & batch_stop );
+        print_hw( &keys[key_idx], KEY_SZ_IN_BYTES );
+        print_hw( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
+        printf("\n");
+
+        sleep(2);  // Allow processor to return to quiescent state
+        gettimeofday( &start, NULL );
+        encrypt (plaintext, PLAINTEXT_BUF_SZ, key_all_0s, &ivs[iv_idx], ciphertext, fd, &batch_start, &batch_stop);
+        gettimeofday( &stop, NULL );
+        print_byte_string( key_all_0s, KEY_SZ_IN_BYTES );
+        print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
+        print_elapsed( &start, &stop, NULL, 0, NULL);
+        print_batch( &batch_start, & batch_stop );
+        print_hw( key_all_0s, KEY_SZ_IN_BYTES );
+        print_hw( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
+        printf("\n");
+
+        sleep(2);  // Allow processor to return to quiescent state
+        gettimeofday( &start, NULL );
+        encrypt (plaintext, PLAINTEXT_BUF_SZ, key_all_1s, &ivs[iv_idx], ciphertext, fd, &batch_start, &batch_stop);
+        gettimeofday( &stop, NULL );
+        print_byte_string( key_all_1s, KEY_SZ_IN_BYTES );
+        print_byte_string( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
+        print_elapsed( &start, &stop, NULL, 0, NULL);
+        print_batch( &batch_start, & batch_stop );
+        print_hw( key_all_1s, KEY_SZ_IN_BYTES );
+        print_hw( &ivs[iv_idx], NONCE_SZ_IN_BYTES );
         printf("\n");
     }
 
     // Report out some details
-    printf(" %d bytes of plaintext, %d bytes encrypted buffer, %d bytes encrypted text, %d bytes of unused buffer.\n",
-            PLAINTEXT_BUF_SZ,  CRYPTTEXT_BUF_SZ, ciphertext_len, CRYPTTEXT_BUF_SZ - ciphertext_len );
+    //printf(" %d bytes of plaintext, %d bytes encrypted buffer, %d bytes encrypted text, %d bytes of unused buffer.\n",
+    //        PLAINTEXT_BUF_SZ,  CRYPTTEXT_BUF_SZ, ciphertext_len, CRYPTTEXT_BUF_SZ - ciphertext_len );
 
     return 0;
 }
