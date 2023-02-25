@@ -24,7 +24,7 @@
 
 #define PLAINTEXT_BUF_SZ (INT_MAX - 4096)   // Assumes sizeof(int)==4
 #define CRYPTTEXT_BUF_SZ (INT_MAX       )
-#define NUM_KEYS (32LL)        // NUM_KEYS * KEY_SZ_IN_BYTES must be <= INT_MAX
+#define NUM_KEYS (6000LL)        // NUM_KEYS * KEY_SZ_IN_BYTES must be <= INT_MAX
 #define KEY_SZ_IN_BYTES (16LL)
 #define NUM_NONCES (NUM_KEYS)
 #define NONCE_SZ_IN_BYTES (8LL)
@@ -95,7 +95,8 @@ print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop ){
     uint64_t mperf  = (bstart->ops[2].msrdata > bstop->ops[2].msrdata)
                         ? (UINT64_MAX - bstart->ops[2].msrdata) + bstop->ops[2].msrdata
                         : bstop->ops[2].msrdata - bstart->ops[2].msrdata;
-    printf("%"PRIu64" %"PRIu64" %"PRIu64" ", energy, aperf, mperf);
+    double ecf = (double)(aperf)/mperf;
+    printf("%"PRIu64" %"PRIu64" %"PRIu64" %10.8lf ", energy, aperf, mperf, ecf);
 }
 
 unsigned char key_all_0s[KEY_SZ_IN_BYTES] = {0x00, 0x00, 0x00, 0x00,
@@ -178,7 +179,7 @@ main (void)
 
     bool init = false;
     if( !init ){
-        printf( "key nonce seconds joules aperf mperf key_hw key_leading nonce_hw nonce_leading\n");
+        printf( "key nonce seconds joules aperf mperf ecf key_hw key_leading nonce_hw nonce_leading\n");
         init = true;
     }
 
