@@ -25,7 +25,7 @@
 #define PLAINTEXT_BUF_SZ (INT_MAX - 4096)   // Assumes sizeof(int)==4
 #define CRYPTTEXT_BUF_SZ (INT_MAX       )
 #define NUM_KEYS (6000LL)        // NUM_KEYS * KEY_SZ_IN_BYTES must be <= INT_MAX
-#define KEY_SZ_IN_BYTES (16LL)
+#define KEY_SZ_IN_BYTES (32LL)
 #define NUM_NONCES (NUM_KEYS)
 #define NONCE_SZ_IN_BYTES (8LL)
 
@@ -102,8 +102,16 @@ print_batch( struct msr_batch_array *bstart, struct msr_batch_array *bstop ){
 unsigned char key_all_0s[KEY_SZ_IN_BYTES] = {0x00, 0x00, 0x00, 0x00,
                                              0x00, 0x00, 0x00, 0x00,
                                              0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x00,
                                              0x00, 0x00, 0x00, 0x00};
 unsigned char key_all_1s[KEY_SZ_IN_BYTES] = {0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
+                                             0xFF, 0xFF, 0xFF, 0xFF,
                                              0xFF, 0xFF, 0xFF, 0xFF,
                                              0xFF, 0xFF, 0xFF, 0xFF,
                                              0xFF, 0xFF, 0xFF, 0xFF};
